@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 
 # -*- coding: utf-8 -*-
-"""
-Created on Mon Dec 18 10:25:18 2017
 
-@author: root
-"""
 import json,os, codecs
 from AES import *
 
