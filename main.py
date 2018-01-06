@@ -3,11 +3,26 @@
 # -*- coding: utf-8 -*-
 
 
-from Server import Server
+from flask import Flask, request, jsonify
 from app import Node
-from dbm import filemanager
+from dbm2 import filemanager
 
 fm = filemanager()
 node = Node(fm)
-server = Server(node)
-server.listen(5000)
+
+app = Flask(__name__)
+
+@app.route("/isfull",methods=['GET'])
+def isFull():
+  return jsonify(node.isFull()), 200
+@app.route("/transactions/new",methods=["POST"])
+def newTransaction():
+  transaction = request.get_json()
+  if node.isValidTxn(node.isValidChain(),transaction):
+    return transaction, 200
+  else:
+    return jsonify(False), 200
+  
+if __name__=="__main__":
+  app.run(host="",port=5000)
+  

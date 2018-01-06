@@ -8,6 +8,7 @@ from ecdsa import BadSignatureError
 #from dateutil import parser
 #from threading import Thread
 from dbm2 import calcWallet
+from urllib.parse import urlparse
 
 class Node:
   BLOCK_SIZE = 10
@@ -29,8 +30,11 @@ class Node:
   def updateTransactions(self):
     self.fm.saveTransactions(self.current_transactions)
     return True
-  def isValidChain(self,chain):
-    chain = chain.copy()
+  def isValidChain(self,chain=None):
+    if chain!=None:
+      chain = chain.copy()
+    else:
+      chain = self.chain
     gb = chain.pop(0)
     state = {}
     # genesisBlock
@@ -63,7 +67,7 @@ class Node:
     vlhash = last_block["hash"]==self.hashBlock(last_block)
     vphash = block["previous_hash"]==last_block["hash"]
     vnn = block["block_n"]==last_block["block_n"]+1
-    PoW = hashlib.sha256(str(last_block["pow"])+last_block["hash"]+str(block["pow"])).encode()).hexdigest()[:4]=="0000"
+    PoW = hashlib.sha256((str(last_block["pow"])+last_block["hash"]+str(block["pow"])).encode()).hexdigest()[:4]=="0000"
     return vchash and vlhash and vphash and vnn and PoW
   def createGenesisBlock(self):
     return self.createBlock(0,datetime.datetime.now(),[],"0")
@@ -167,6 +171,18 @@ class Node:
     e = ECDSA(privatekey=private,publickey=public)
     t["signature"] = e.sign(t).hex()
     return t
+  def isFull(self):
+    return len(self.current_transactions)>=self.BLOCK_SIZE
+  def addNode(self,address):
+    parsed_url = urlparse(address)
+    self.nodes.add(parsed_url.netloc)
+    self.updateNodes()
+    return True
+  def updateNodes(self,nodes=None):
+    if nodes==None:
+      nodes = self.nodes
+    self.fm.saveNodes(nodes)
+    return True
   def addTransaction(self,transaction):
     state = self.isValidChain(self.chain)
     if self.isValidTxn(state,transaction):
@@ -175,10 +191,16 @@ class Node:
       return True
     return False
   def mine(self):
-    if len(self.current_transactions)<self.BLOCK_SIZE:
+    if not self.isFull():
       tr = self.current_transactions
     else:
-      tr = self.current_transactions[:BLOCK_SIZE]
+      tr = self.current_transactions[:self.BLOCK_SIZE]
     last_block = self.chain[-1]
-    
+    rt = self.createRewardTransaction(self.wallet)
+    tr.append(rt)
+    b = self.createNextBlock(tr)
+    if self.isValidNextBlock(last_block,b):
+      self.updateChain(b)
+      return b
+    return False
     
