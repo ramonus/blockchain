@@ -50,12 +50,14 @@ class filemanager:
   DEFAULT_CHAIN = "config/blockchain.bc"
   DEFAULT_NODES = "config/nodes.bc"
   DEFAULT_WALLET = "config/wallets/wallet.dat"
+  DEFAULT_PNODES = "config/pnodes.bc"
   def __init__(self,data=None):
     self.chainloc = self.DEFAULT_CHAIN
     self.keyloc = self.DEFAULT_AESKEY
     self.nodesloc = self.DEFAULT_NODES
     self.transloc = self.DEFAULT_TRANSACTIONS
     self.walletloc = self.DEFAULT_WALLET
+    self.pnodesloc = self.DEFAULT_PNODES
     #some data input could be made here
   @staticmethod
   def __check_path(path):
@@ -95,7 +97,7 @@ class filemanager:
         bc = json.loads(ddata)
       except json.JSONDecodeError:
         return None
-      return bc
+    return bc
   def loadTransactions(self):
     key = self.loadKey()
     aes = AESC(key)
@@ -114,7 +116,7 @@ class filemanager:
         t = json.loads(ddata)
       except json.JSONDecodeError:
         return None
-      return t
+    return t
   def loadNodes(self):
     key = self.loadKey()
     aes = AESC(key)
@@ -133,7 +135,36 @@ class filemanager:
         nodes = json.loads(ddata)
       except json.JSONDecodeError:
         return None
-      return set(nodes)
+    return set(nodes)
+  def loadPNodes(self):
+    key = self.loadKey()
+    aes = AESC(key)
+    fp = self.pnodesloc
+    ppath = fp[:fp.rfind("/")]
+    self.__check_path(ppath)
+    if not os.path.exists(fp):
+      pnodes = []
+      with open(fp,"wb") as f:
+        f.write(aes.encrypt(json.dumps(pnodes,sort_keys=True)))
+    else:
+      with open(fp,"rb") as f:
+        edata = f.read()
+      ddata = aes.decrypt(edata)
+      try:
+        pnodes = json.loads(ddata)
+      except json.JSONDecodeError:
+        return None
+    return pnodes
+      
+  def savePNodes(self,pnodes):
+    key = self.loadKey()
+    aes = AESC(key)
+    fp = self.pnodesloc
+    ppath = fp[:fp.rfind("/")]
+    self.__check_path(ppath)
+    with open(fp,"wb") as f:
+      f.write(aes.encrypt(json.dumps(pnodes,sort_keys=True)))
+    return True
   def saveBC(self,chain):
     key = self.loadKey()
     aes = AESC(key)
@@ -175,5 +206,4 @@ class filemanager:
       with open(fp,"r") as f:
         wallet = json.loads(f.read())
     return wallet
-
 

@@ -2,21 +2,28 @@
 
 # -*- coding: utf-8 -*-
 
-import json, hashlib,datetime
+import json, hashlib,datetime,requests
 from ECDSA import ECDSA
 from ecdsa import BadSignatureError
 #from dateutil import parser
 #from threading import Thread
 from dbm2 import calcWallet
 from urllib.parse import urlparse
+from multiping import multi_ping, MultiPing
+import random
 
 class Node:
   BLOCK_SIZE = 10
-  def __init__(self,fm):
+  DEFAULT_MAX_NODES = 8
+  DEFAULT_PORT = 5000
+  def __init__(self,fm,*args,**kwargs):
+    self.port = self.DEFAULT_PORT
+    self.max_nodes = kwargs["max_nodes"] if "max_nodes" in kwargs and kwargs["max_nodes"]>2 else self.DEFAULT_MAX_NODES
     self.fm = fm
     self.chain = self.fm.loadBC()
     self.current_transactions = self.fm.loadTransactions()
     self.nodes = self.fm.loadNodes()
+    self.pnodes = self.fm.loadPNodes()
 #    self.cleanTransactions()
     self.wallet = self.fm.loadWallet()
     if self.chain==[]:
@@ -97,14 +104,88 @@ class Node:
     if "hash" in block:
       del block["hash"]
     return hashlib.sha256(json.dumps(block,sort_keys=True).encode()).hexdigest()
+  @staticmethod
+  def __checkNode(node):
+    # simple ping check
+    try:
+      t = Node.__ping(node)
+      return t<2 and t!=-1
+    except:
+      return False
+    
+    
+  def preparePNode(self):
+    return self.__preparePNode()
+  def ping(self,host,n=0):
+    return self.__ping(host,n)
+  
+  
+  def __preparePNode(self):
+    if self.pnodes:
+      #pick random pnode
+      while self.pnodes:
+        pnode = random.choice(self.pnodes)
+        t = self.__ping(pnode,4)
+        print("Available pnodes:",len(self.pnodes))
+        del self.pnodes[self.pnodes.index(pnode)]
+        if t<2 and t!=-1:
+          return pnode
+        print("Not valid node:",pnode)
+      return None
+  def resolveNodes(self):
+    # clean nodes
+    nodes = set([node for node in list(self.nodes) if self.__checkNode(node)])
+    added = []
+    while len(nodes)<self.max_nodes and len(self.pnodes)>0:
+      nnode = self.__preparePNode()
+      if nnode:
+        self.addNode(nnode)
+        # let node know we are alive
+        url = f'http://{nnode}/pnodes/register'
+        self.__prequest(url,["http://localhost:"+str(self.port)])
+        added.append(nnode)
+    print("Added {} new nodes".format(len(added)))
+    
+    return {"added_nodes":added}
+  @staticmethod
+  def __ping(node,n=0):
+    if ":" in node:
+      node = node.split(":")[0]
+    if n>0:
+      avg = 0
+      for i in range(n):
+        avg += Node.__ping(node)
+      avg/=n
+    try:
+      mp = MultiPing([node])
+      mp.send()
+      r,nr = mp.receive(1)
+      for addr, rtt in r.items():
+        RTT = rtt
+      if nr:
+        mp.send()
+        r,nr = mp.receive(1)
+        RTT = -1
+      return RTT
+    except:
+      return -1
   def cleanTransactions(self):
     s = self.current_transactions.copy()
     if not self.isValidChain(self.chain):
       self.resolveConflicts()
     status = {}
 #    for block in self.chain[]
+  @staticmethod
+  def __srequest(end):
+    headers = {"Content-Type":"application/json"}
+    return requests.get(end,headers=headers).json()
+  @staticmethod
+  def __prequest(end,data):
+    headers = {"Content-Type":"application/json"}
+    return requests.post(end,json=data,headers=headers).json()
   def resolveConflicts(self):
-    pass
+    self.resolveNodes()
+    
   @staticmethod
   def isValidTxn(state,txn):
     #verify
@@ -131,7 +212,8 @@ class Node:
       else:
         del txn[i]
     return state
-      
+  def getNodes(self):
+    return list(self.nodes)
   @staticmethod
   def createTransaction(wallet,recipient,amount):
     d = wallet["direction"]
@@ -163,7 +245,7 @@ class Node:
       return False
     t = {"sender":"0",
          "recipient":wallet["direction"],
-         "amount":1,
+         "amount":1.0,
          "timestamp":datetime.datetime.now().isoformat(),
          "public_key":wallet["public"]}
     public = bytes.fromhex(wallet["public"])
@@ -171,13 +253,30 @@ class Node:
     e = ECDSA(privatekey=private,publickey=public)
     t["signature"] = e.sign(t).hex()
     return t
+  def getLastBlock(self):
+    return self.chain[-1]
   def isFull(self):
     return len(self.current_transactions)>=self.BLOCK_SIZE
-  def addNode(self,address):
-    parsed_url = urlparse(address)
-    self.nodes.add(parsed_url.netloc)
-    self.updateNodes()
+  def addPNode(self,address):
+    try:
+      parsed_url = urlparse(address)
+      self.pnodes.append(parsed_url.netloc)
+      self.updatePNodes()
+      return True
+    except:
+      return False
+  def updatePNodes(self,nodes=None):
+    if nodes==None:
+      pnodes = self.pnodes
+    self.fm.savePNodes(pnodes)
     return True
+  def addNode(self,address):
+    try:
+      self.nodes.add(address)
+      self.updateNodes()
+      return True
+    except:
+      return False
   def updateNodes(self,nodes=None):
     if nodes==None:
       nodes = self.nodes
