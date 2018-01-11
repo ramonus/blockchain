@@ -41,7 +41,7 @@ class Node:
     if chain!=None:
       chain = chain.copy()
     else:
-      chain = self.chain
+      chain = self.chain.copy()
     gb = chain.pop(0)
     state = {}
     # genesisBlock
