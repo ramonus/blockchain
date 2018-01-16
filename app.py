@@ -5,7 +5,7 @@
 import json, hashlib,datetime,requests
 from ECDSA import ECDSA
 from ecdsa import BadSignatureError
-#from dateutil import parser
+from dateutil import parser
 #from threading import Thread
 from dbm2 import calcWallet
 from urllib.parse import urlparse
@@ -177,15 +177,18 @@ class Node:
 #    for block in self.chain[]
   @staticmethod
   def __srequest(end):
+    if not end.startswith("http://"):
+      end = "http://"+end
     headers = {"Content-Type":"application/json"}
-    return requests.get(end,headers=headers).json()
+    r = requests.get(end,headers=headers)
+    if r.status_code == 200:
+      return r.json()
+    else:
+      return False
   @staticmethod
   def __prequest(end,data):
     headers = {"Content-Type":"application/json"}
     return requests.post(end,json=data,headers=headers).json()
-  def resolveConflicts(self):
-    self.resolveNodes()
-    
   @staticmethod
   def isValidTxn(state,txn):
     #verify
@@ -289,11 +292,17 @@ class Node:
       self.fm.saveTransactions(self.current_transactions)
       return True
     return False
+  def __isNewestBlock(self,block):
+    llb = self.chain[-1]
+    return (llb["block_n"]+1==block["block_n"]) and parser.parse(llb["timestamp"])<parser.parse(block["timestamp"])      
   def mine(self):
     if not self.isFull():
-      tr = self.current_transactions
+      tr = self.current_transactions.copy()
+      self.current_transactions = []
     else:
-      tr = self.current_transactions[:self.BLOCK_SIZE]
+      tr = self.current_transactions[:self.BLOCK_SIZE].copy()
+      self.current_transactions = self.current_transactions[self.BLOCK_SIZE:]
+    self.fm.saveTransactions(self.current_transactions)
     last_block = self.chain[-1]
     rt = self.createRewardTransaction(self.wallet)
     tr.append(rt)
@@ -302,4 +311,21 @@ class Node:
       self.updateChain(b)
       return b
     return False
+  def resolveConflicts(self):
+    self.resolveNodes()
+    replaced = False
+    for node in self.nodes:
+      end = node+"/chain/last"
+      lb = self.__srequest(end)
+      if lb and self.__isNewestBlock(lb):
+        end = node+"/chain"
+        nc = self.__srequest(end)
+        if nc and self.isValidChain(nc) and len(nc)>len(self.chain):
+          #replacechain
+          self.chain = nc
+          self.fm.saveBC(nc)
+          replaced = True
+    return replaced
+          
+          
     

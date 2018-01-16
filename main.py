@@ -63,8 +63,19 @@ def resolve_nodes():
   else:
     return "0 nodes added",400
 
-
-
+@app.route("/chain/resolve",methods=["GET"])
+def resolve_chain():
+  r = node.resolveConflicts()
+  if r:
+    return jsonify(r), 200
+  else:
+    print("Nothing")
+    return jsonify(r), 400
+@app.route("/mine",methods=["GET"])
+def mine():
+  mb = node.mine()
+  resp = {"Mined_block":mb}
+  return jsonify(resp), 200
 if __name__=="__main__":
   import argparse
   parser = argparse.ArgumentParser()
